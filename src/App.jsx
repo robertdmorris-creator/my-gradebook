@@ -50,7 +50,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = "mrbobgradebook-v1"; // Fixed ID to prevent path errors
+const appId = "mrbobgradebook-v1"; 
 
 // --- Components ---
 
@@ -191,12 +191,12 @@ const GradebookView = ({
 
     if (!dataLoaded) return <div className="p-12 text-center text-slate-400">Loading gradebook...</div>;
 
-    // Filter Logic:
-    // If viewing "All Groups", show ONLY students who are enrolled (have a group) in this subject.
-    // If viewing a specific group, show only students in that group.
+    // SORTED STUDENTS: Alphabetical sort by name
+    const sortedStudents = [...students].sort((a, b) => a.name.localeCompare(b.name));
+
     const visibleStudents = viewGroup === "All" 
-      ? students.filter(s => getStudentGroup(s, currentSubject) !== "No Group")
-      : students.filter(s => getStudentGroup(s, currentSubject) === viewGroup);
+      ? sortedStudents.filter(s => getStudentGroup(s, currentSubject) !== "No Group")
+      : sortedStudents.filter(s => getStudentGroup(s, currentSubject) === viewGroup);
 
     // Filter assignments based on view group
     const visibleAssignments = assignments.filter(a => 
@@ -351,7 +351,11 @@ const StudentsView = ({
     onAddGroup,
     onManageGroups,
     onUpdateStudentGroup
-}) => (
+}) => {
+    // SORTED STUDENTS: Alphabetical sort by name
+    const sortedStudents = [...students].sort((a, b) => a.name.localeCompare(b.name));
+
+    return (
     <div className="max-w-4xl mx-auto space-y-6">
       <Card className="p-6">
         <div className="flex justify-between items-center mb-6">
@@ -400,7 +404,7 @@ const StudentsView = ({
                 <div className="col-span-2 text-right">Actions</div>
             </div>
             <div className="divide-y divide-slate-100">
-                {students.map((student, idx) => (
+                {sortedStudents.map((student, idx) => (
                     <div key={student.id} className="grid grid-cols-12 gap-4 p-3 items-center hover:bg-white transition-colors">
                         <div className="col-span-1 text-center font-bold text-indigo-600 bg-indigo-50 rounded-full w-6 h-6 flex items-center justify-center mx-auto text-xs">
                             {idx + 1}
@@ -436,7 +440,8 @@ const StudentsView = ({
         )}
       </Card>
     </div>
-);
+    );
+};
 
 const ReportsView = ({ 
     students, 
@@ -446,14 +451,17 @@ const ReportsView = ({
     reportComments,
     onCommentChange
 }) => {
-    const [selectedStudentId, setSelectedStudentId] = useState(students[0]?.id || '');
+    // SORTED STUDENTS: Alphabetical sort by name
+    const sortedStudents = [...students].sort((a, b) => a.name.localeCompare(b.name));
+    
+    const [selectedStudentId, setSelectedStudentId] = useState(sortedStudents[0]?.id || '');
     const selectedStudent = students.find(s => s.id === parseInt(selectedStudentId));
 
     useEffect(() => {
-        if (!selectedStudent && students.length > 0) {
-            setSelectedStudentId(students[0].id);
+        if (!selectedStudent && sortedStudents.length > 0) {
+            setSelectedStudentId(sortedStudents[0].id);
         }
-    }, [students, selectedStudent]);
+    }, [students, selectedStudent, sortedStudents]);
 
     if (!selectedStudent) return <div className="p-8 text-center text-slate-500">Please add students first.</div>;
 
@@ -469,7 +477,7 @@ const ReportsView = ({
               value={selectedStudentId}
               onChange={(e) => setSelectedStudentId(e.target.value)}
             >
-              {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              {sortedStudents.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
           <Button onClick={handlePrint} className="w-full sm:w-auto bg-white text-indigo-900 hover:bg-indigo-50">
@@ -1161,4 +1169,3 @@ export default function App() {
     </div>
   );
 }
-
