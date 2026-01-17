@@ -17,7 +17,8 @@ import {
   AlertTriangle,
   Filter,
   X,
-  Pencil
+  Pencil,
+  Percent
 } from 'lucide-react';
 
 // --- Firebase Imports ---
@@ -101,8 +102,8 @@ const getTypeColor = (type) => {
     }
 };
 
-// Weighted Calculation Logic: 40% Summative (Test/Quiz), 60% Formative (Others)
-const calculateGrade = (studentId, subject, students, assignments, grades) => {
+// Weighted Calculation Logic: Now accepts custom weights
+const calculateGrade = (studentId, subject, students, assignments, grades, weights) => {
     const student = students.find(s => s.id === studentId);
     if (!student) return { percent: 0, letter: 'N/A' };
     
@@ -116,7 +117,7 @@ const calculateGrade = (studentId, subject, students, assignments, grades) => {
 
     if (relevantAssignments.length === 0) return { percent: 0, letter: 'N/A' };
 
-    const summativeTypes = ['Test', 'Quiz']; // 40% Weight
+    const summativeTypes = ['Test', 'Quiz']; 
     
     let summativePoints = 0;
     let summativeMax = 0;
@@ -127,7 +128,6 @@ const calculateGrade = (studentId, subject, students, assignments, grades) => {
         const gradeKey = `${studentId}-${assignment.id}`;
         const score = grades[gradeKey];
         
-        // Skip ungraded assignments
         if (score !== undefined && score !== "") {
             const numericScore = parseFloat(score);
             const numericMax = parseFloat(assignment.maxPoints);
@@ -142,22 +142,21 @@ const calculateGrade = (studentId, subject, students, assignments, grades) => {
         }
     });
 
-    // If no grades entered yet for any category
     if (summativeMax === 0 && formativeMax === 0) return { percent: 0, letter: 'N/A' };
 
     let weightedPercent = 0;
+    
+    // Use configured weights (default to 40/60 if missing)
+    const summativeWeight = (weights?.summative || 40) / 100;
+    const formativeWeight = (weights?.formative || 60) / 100;
 
-    // Calculation Logic
     if (summativeMax > 0 && formativeMax > 0) {
-        // Both categories exist: Apply 40/60 split
         const summativePercent = summativePoints / summativeMax;
         const formativePercent = formativePoints / formativeMax;
-        weightedPercent = (summativePercent * 0.40) + (formativePercent * 0.60);
+        weightedPercent = (summativePercent * summativeWeight) + (formativePercent * formativeWeight);
     } else if (summativeMax > 0) {
-        // Only Tests exist so far -> 100% of grade
         weightedPercent = summativePoints / summativeMax;
     } else {
-        // Only Homework exists so far -> 100% of grade
         weightedPercent = formativePoints / formativeMax;
     }
 
@@ -181,6 +180,7 @@ const GradebookView = ({
   assignments, 
   grades, 
   groups,
+  weights,
   setCurrentSubject, 
   onAddAssignment, 
   onDeleteAssignment, 
@@ -191,14 +191,12 @@ const GradebookView = ({
 
     if (!dataLoaded) return <div className="p-12 text-center text-slate-400">Loading gradebook...</div>;
 
-    // SORTED STUDENTS: Alphabetical sort by name
     const sortedStudents = [...students].sort((a, b) => a.name.localeCompare(b.name));
 
     const visibleStudents = viewGroup === "All" 
       ? sortedStudents.filter(s => getStudentGroup(s, currentSubject) !== "No Group")
       : sortedStudents.filter(s => getStudentGroup(s, currentSubject) === viewGroup);
 
-    // Filter assignments based on view group
     const visibleAssignments = assignments.filter(a => 
       a.subject === currentSubject &&
       (viewGroup === "All" || !a.group || a.group === "All" || a.group === viewGroup)
@@ -206,7 +204,6 @@ const GradebookView = ({
 
     return (
       <div className="space-y-6 animate-fadeIn">
-        {/* Header Controls */}
         <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
           <div className="flex overflow-x-auto pb-2 gap-2 no-scrollbar max-w-full">
             {subjects.map(sub => (
@@ -237,7 +234,6 @@ const GradebookView = ({
           </div>
         </div>
 
-        {/* Gradebook Table */}
         <Card className="overflow-hidden">
           <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
             <div>
@@ -289,15 +285,8 @@ const GradebookView = ({
                 </tr>
               </thead>
               <tbody>
-                {visibleStudents.length === 0 && (
-                    <tr>
-                        <td colSpan={visibleAssignments.length + 2} className="px-4 py-8 text-center text-slate-400 italic">
-                            No students enrolled in {currentSubject} (or {viewGroup}). Go to the Students tab to enroll them.
-                        </td>
-                    </tr>
-                )}
                 {visibleStudents.map((student, idx) => {
-                  const stats = calculateGrade(student.id, currentSubject, students, assignments, grades);
+                  const stats = calculateGrade(student.id, currentSubject, students, assignments, grades, weights);
                   return (
                     <tr key={student.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                       <td className="px-4 py-3 font-medium text-slate-800 sticky left-0 bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
@@ -352,7 +341,6 @@ const StudentsView = ({
     onManageGroups,
     onUpdateStudentGroup
 }) => {
-    // SORTED STUDENTS: Alphabetical sort by name
     const sortedStudents = [...students].sort((a, b) => a.name.localeCompare(b.name));
 
     return (
@@ -376,7 +364,6 @@ const StudentsView = ({
           </div>
         </div>
         
-        {/* Subject Bar for Group Assignment */}
         <div className="mb-6">
             <p className="text-sm text-slate-500 mb-2 font-medium uppercase tracking-wider">Assign groups for:</p>
             <div className="flex overflow-x-auto pb-2 gap-2 no-scrollbar max-w-full">
@@ -448,12 +435,11 @@ const ReportsView = ({
     subjects, 
     assignments, 
     grades,
+    weights,
     reportComments,
     onCommentChange
 }) => {
-    // SORTED STUDENTS: Alphabetical sort by name
     const sortedStudents = [...students].sort((a, b) => a.name.localeCompare(b.name));
-    
     const [selectedStudentId, setSelectedStudentId] = useState(sortedStudents[0]?.id || '');
     const selectedStudent = students.find(s => s.id === parseInt(selectedStudentId));
 
@@ -501,10 +487,9 @@ const ReportsView = ({
             {subjects.map(subject => {
               const studentGroup = getStudentGroup(selectedStudent, subject);
               
-              // Smart Hide: If student has "No Group" for this subject, don't show it on report card
               if (studentGroup === "No Group") return null;
 
-              const stats = calculateGrade(selectedStudent.id, subject, students, assignments, grades);
+              const stats = calculateGrade(selectedStudent.id, subject, students, assignments, grades, weights);
               const subjectAssignments = assignments.filter(a => a.subject === subject);
               
               const relevantAssignments = subjectAssignments.filter(a => 
@@ -580,14 +565,57 @@ const ReportsView = ({
     );
 };
 
-const SettingsView = ({ onExport, onImport }) => (
+const SettingsView = ({ onExport, onImport, weights, onWeightChange }) => (
     <div className="max-w-2xl mx-auto space-y-6">
         <Card className="p-6">
-            <h2 className="text-xl font-bold text-slate-800 mb-4">Cloud & Backups</h2>
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Grading & Weights</h2>
             <p className="text-slate-600 mb-6">
-                Your data is now syncing to the cloud automatically. You can use these buttons to create manual file backups if you want extra security.
+                Adjust how much Tests/Quizzes (Summative) vs Homework/Projects (Formative) count towards the final grade.
             </p>
+            
+            <div className="grid grid-cols-2 gap-8 mb-8">
+                <div className="p-4 bg-red-50 rounded-lg border border-red-100">
+                    <div className="flex items-center gap-2 mb-2">
+                        <AlertTriangle className="w-5 h-5 text-red-500" />
+                        <label className="font-bold text-red-800">Summative</label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <input 
+                            type="number" 
+                            min="0" 
+                            max="100"
+                            className="w-20 text-2xl font-bold text-center border-b-2 border-red-200 bg-transparent focus:outline-none focus:border-red-500"
+                            value={weights.summative}
+                            onChange={(e) => onWeightChange('summative', e.target.value)}
+                        />
+                        <Percent className="w-5 h-5 text-red-400" />
+                    </div>
+                    <p className="text-xs text-red-600 mt-2">Tests & Quizzes</p>
+                </div>
 
+                <div className="p-4 bg-indigo-50 rounded-lg border border-indigo-100">
+                     <div className="flex items-center gap-2 mb-2">
+                        <BookOpen className="w-5 h-5 text-indigo-500" />
+                        <label className="font-bold text-indigo-800">Formative</label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <input 
+                            type="number" 
+                            min="0" 
+                            max="100"
+                            className="w-20 text-2xl font-bold text-center border-b-2 border-indigo-200 bg-transparent focus:outline-none focus:border-indigo-500"
+                            value={weights.formative}
+                            onChange={(e) => onWeightChange('formative', e.target.value)}
+                        />
+                        <Percent className="w-5 h-5 text-indigo-400" />
+                    </div>
+                    <p className="text-xs text-indigo-600 mt-2">Homework, Projects, etc.</p>
+                </div>
+            </div>
+        </Card>
+
+        <Card className="p-6">
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Cloud & Backups</h2>
             <div className="grid gap-4 md:grid-cols-2">
                 <button onClick={onExport} className="flex flex-col items-center justify-center p-6 border-2 border-indigo-100 rounded-xl hover:bg-indigo-50 hover:border-indigo-200 transition-all group">
                     <div className="bg-indigo-100 p-3 rounded-full mb-3 group-hover:bg-indigo-200 text-indigo-700"><Download className="w-6 h-6" /></div>
@@ -621,6 +649,7 @@ export default function App() {
   const [assignments, setAssignments] = useState([]);
   const [grades, setGrades] = useState({});
   const [reportComments, setReportComments] = useState({});
+  const [weights, setWeights] = useState({ summative: 40, formative: 60 });
   const [dataLoaded, setDataLoaded] = useState(false);
 
   // --- Modal State ---
@@ -641,13 +670,13 @@ export default function App() {
     groups: ["Block A"],
     assignments: [],
     grades: {},
-    reportComments: {}
+    reportComments: {},
+    weights: { summative: 40, formative: 60 }
   };
 
   // --- Auth & Data Loading ---
   useEffect(() => {
     const initAuth = async () => {
-      // Force Anonymous Auth to use correct project
       try {
         await signInAnonymously(auth);
       } catch (e) {
@@ -668,7 +697,6 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
 
-    // Use the hardcoded appId to ensure valid path
     const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'data', 'gradebook');
     
     const unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
@@ -685,7 +713,8 @@ export default function App() {
           groups: data.groups || ["General"],
           assignments: data.assignments || [],
           grades: data.grades || {},
-          reportComments: data.reportComments || {}
+          reportComments: data.reportComments || {},
+          weights: data.weights || { summative: 40, formative: 60 }
         };
 
         if (!dataLoaded || JSON.stringify(cloudState) !== lastSavedData.current) {
@@ -694,17 +723,18 @@ export default function App() {
           setAssignments(cloudState.assignments);
           setGrades(cloudState.grades);
           setReportComments(cloudState.reportComments);
+          setWeights(cloudState.weights);
           
           lastSavedData.current = JSON.stringify(cloudState);
           setDataLoaded(true);
         }
       } else {
-        // Init with Blank Template
         setStudents(initialData.students);
         setGroups(initialData.groups);
         setAssignments(initialData.assignments);
         setGrades(initialData.grades);
         setReportComments(initialData.reportComments);
+        setWeights(initialData.weights);
         setDataLoaded(true);
       }
     }, (error) => {
@@ -721,7 +751,7 @@ export default function App() {
   useEffect(() => {
     if (!user || !dataLoaded) return;
 
-    const currentData = JSON.stringify({ students, groups, assignments, grades, reportComments });
+    const currentData = JSON.stringify({ students, groups, assignments, grades, reportComments, weights });
     
     if (currentData === lastSavedData.current) return;
 
@@ -738,6 +768,7 @@ export default function App() {
           assignments,
           grades,
           reportComments,
+          weights,
           lastUpdated: new Date().toISOString()
         });
         
@@ -751,7 +782,7 @@ export default function App() {
     }, 2000);
 
     return () => clearTimeout(saveTimeoutRef.current);
-  }, [students, groups, assignments, grades, reportComments, user, dataLoaded]);
+  }, [students, groups, assignments, grades, reportComments, weights, user, dataLoaded]);
 
 
   const handleGradeChange = (studentId, assignmentId, value) => {
@@ -776,6 +807,17 @@ export default function App() {
           ...prev,
           [studentId]: comment
       }));
+  };
+
+  const updateWeights = (type, value) => {
+      const val = parseInt(value) || 0;
+      if (val > 100) return;
+      
+      if (type === 'summative') {
+          setWeights({ summative: val, formative: 100 - val });
+      } else {
+          setWeights({ summative: 100 - val, formative: val });
+      }
   };
 
   // --- Modal Logic ---
@@ -883,6 +925,7 @@ export default function App() {
                 setAssignments(modal.itemData.assignments);
                 setGrades(modal.itemData.grades);
                 setReportComments(modal.itemData.reportComments || {});
+                setWeights(modal.itemData.weights || { summative: 40, formative: 60 });
             }
             break;
         default:
@@ -904,7 +947,7 @@ export default function App() {
   const openDeleteStudent = (id) => { setModal({ isOpen: true, type: 'DELETE_STUDENT', itemId: id }); };
 
   const handleExport = () => {
-    const data = { students, groups, assignments, grades, reportComments };
+    const data = { students, groups, assignments, grades, reportComments, weights };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -991,6 +1034,7 @@ export default function App() {
                 assignments={assignments}
                 grades={grades}
                 groups={groups}
+                weights={weights}
                 setCurrentSubject={setCurrentSubject}
                 onAddAssignment={openAddAssignment}
                 onDeleteAssignment={openDeleteAssignment}
@@ -1018,6 +1062,7 @@ export default function App() {
                 subjects={subjects}
                 assignments={assignments}
                 grades={grades}
+                weights={weights}
                 reportComments={reportComments}
                 onCommentChange={updateReportComment}
             />
@@ -1026,6 +1071,8 @@ export default function App() {
             <SettingsView 
                 onExport={handleExport}
                 onImport={handleImport}
+                weights={weights}
+                onWeightChange={updateWeights}
             />
         }
       </main>
