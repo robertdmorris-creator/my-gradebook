@@ -35,6 +35,24 @@ import {
   onSnapshot 
 } from "firebase/firestore";
 
+// --- Firebase Initialization (CRITICAL STEP) ---
+const firebaseConfig = {
+  apiKey: "AIzaSyCYkFIkz1HoBYJ_1yCXIKBpfUPNEmqLIHo",
+  authDomain: "mrbobgradebook.firebaseapp.com",
+  projectId: "mrbobgradebook",
+  storageBucket: "mrbobgradebook.firebasestorage.app",
+  messagingSenderId: "651667681279",
+  appId: "1:651667681279:web:dad665c508be9f7f7241ca",
+  measurementId: "G-X1DBZXH41W"
+};
+
+// Initialize Firebase (Only Once)
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+// Hardcoded App ID to prevent path errors
+const appId = "mrbobgradebook-v1"; 
+
 // --- Components ---
 
 const Card = ({ children, className = '' }) => (
@@ -571,35 +589,6 @@ const SettingsView = ({ onExport, onImport }) => (
     </div>
 );
 
-// --- Firebase Initialization ---
-// Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
-
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
-  apiKey: "AIzaSyCYkFIkz1HoBYJ_1yCXIKBpfUPNEmqLIHo",
-  authDomain: "mrbobgradebook.firebaseapp.com",
-  projectId: "mrbobgradebook",
-  storageBucket: "mrbobgradebook.firebasestorage.app",
-  messagingSenderId: "651667681279",
-  appId: "1:651667681279:web:dad665c508be9f7f7241ca",
-  measurementId: "G-X1DBZXH41W"
-};
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-// SANITIZATION FIX: Ensure appId doesn't contain path separators
-const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const appId = rawAppId.replace(/[\/.]/g, '_'); 
-
 // --- Main App Component ---
 
 export default function App() {
@@ -661,6 +650,7 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
 
+    // Use the hardcoded appId to ensure valid path
     const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'data', 'gradebook');
     
     const unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
