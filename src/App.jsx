@@ -35,7 +35,7 @@ import {
   onSnapshot 
 } from "firebase/firestore";
 
-// --- Firebase Initialization (CRITICAL STEP) ---
+// --- Firebase Initialization ---
 const firebaseConfig = {
   apiKey: "AIzaSyCYkFIkz1HoBYJ_1yCXIKBpfUPNEmqLIHo",
   authDomain: "mrbobgradebook.firebaseapp.com",
@@ -50,8 +50,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-// Hardcoded App ID to prevent path errors
-const appId = "mrbobgradebook-v1"; 
+const appId = "mrbobgradebook-v1"; // Fixed ID to prevent path errors
 
 // --- Components ---
 
@@ -192,8 +191,11 @@ const GradebookView = ({
 
     if (!dataLoaded) return <div className="p-12 text-center text-slate-400">Loading gradebook...</div>;
 
+    // Filter Logic:
+    // If viewing "All Groups", show ONLY students who are enrolled (have a group) in this subject.
+    // If viewing a specific group, show only students in that group.
     const visibleStudents = viewGroup === "All" 
-      ? students 
+      ? students.filter(s => getStudentGroup(s, currentSubject) !== "No Group")
       : students.filter(s => getStudentGroup(s, currentSubject) === viewGroup);
 
     // Filter assignments based on view group
@@ -287,6 +289,13 @@ const GradebookView = ({
                 </tr>
               </thead>
               <tbody>
+                {visibleStudents.length === 0 && (
+                    <tr>
+                        <td colSpan={visibleAssignments.length + 2} className="px-4 py-8 text-center text-slate-400 italic">
+                            No students enrolled in {currentSubject} (or {viewGroup}). Go to the Students tab to enroll them.
+                        </td>
+                    </tr>
+                )}
                 {visibleStudents.map((student, idx) => {
                   const stats = calculateGrade(student.id, currentSubject, students, assignments, grades);
                   return (
@@ -387,7 +396,7 @@ const StudentsView = ({
             <div className="grid grid-cols-12 gap-4 p-3 bg-slate-100 text-xs font-bold text-slate-500 uppercase border-b border-slate-200">
                 <div className="col-span-1 text-center">#</div>
                 <div className="col-span-5">Name</div>
-                <div className="col-span-4">Group for {currentSubject}</div>
+                <div className="col-span-4">Enrollment for {currentSubject}</div>
                 <div className="col-span-2 text-right">Actions</div>
             </div>
             <div className="divide-y divide-slate-100">
@@ -401,11 +410,11 @@ const StudentsView = ({
                         </div>
                         <div className="col-span-4">
                             <select 
-                                value={getStudentGroup(student, currentSubject) === "No Group" ? "" : getStudentGroup(student, currentSubject)}
+                                value={getStudentGroup(student, currentSubject)}
                                 onChange={(e) => onUpdateStudentGroup(student.id, currentSubject, e.target.value)}
-                                className="w-full text-sm border-slate-200 rounded-md focus:ring-indigo-500 focus:border-indigo-500 py-1"
+                                className={`w-full text-sm border-slate-200 rounded-md focus:ring-indigo-500 focus:border-indigo-500 py-1 ${getStudentGroup(student, currentSubject) === "No Group" ? "text-slate-400 italic" : "text-indigo-700 font-medium bg-indigo-50 border-indigo-200"}`}
                             >
-                                <option disabled value="">Select Group</option>
+                                <option value="No Group">Not Enrolled</option>
                                 {groups.map(g => <option key={g} value={g}>{g}</option>)}
                             </select>
                         </div>
@@ -630,10 +639,11 @@ export default function App() {
   // --- Auth & Data Loading ---
   useEffect(() => {
     const initAuth = async () => {
-      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-        await signInWithCustomToken(auth, __initial_auth_token);
-      } else {
+      // Force Anonymous Auth to use correct project
+      try {
         await signInAnonymously(auth);
+      } catch (e) {
+        console.error("Login Error:", e);
       }
     };
     initAuth();
