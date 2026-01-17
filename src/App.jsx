@@ -481,7 +481,7 @@ const ReportsView = ({
           <div className="border-b-2 border-slate-800 pb-6 mb-8 flex justify-between items-end">
             <div>
               <h1 className="text-3xl font-serif font-bold text-slate-900">Student Progress Report</h1>
-              <p className="text-slate-500 mt-2">Academic Year 2023-2024</p>
+              <p className="text-slate-500 mt-2">Academic Year 2025-2026</p>
             </div>
             <div className="text-right">
               <h2 className="text-xl font-bold text-slate-800">{selectedStudent.name}</h2>
@@ -1161,3 +1161,4 @@ export default function App() {
     </div>
   );
 }
+
