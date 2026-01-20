@@ -676,10 +676,7 @@ export default function App() {
     // Listen for auth state first
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      // Only sign in anonymously if NO user is present (and no user was ever present this session)
-      if (!currentUser) {
-        signInAnonymously(auth).catch(e => console.error("Login Error", e));
-      }
+      // Removed automatic anonymous sign-in to prevent flashing
     });
     return () => unsubscribe();
   }, []);
