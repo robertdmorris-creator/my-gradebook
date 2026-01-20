@@ -18,15 +18,18 @@ import {
   Filter,
   X,
   Pencil,
-  Percent
+  Percent,
+  LogOut
 } from 'lucide-react';
 
 // --- Firebase Imports ---
 import { initializeApp } from "firebase/app";
 import { 
   getAuth, 
-  signInWithCustomToken, 
-  signInAnonymously, 
+  signInWithPopup, 
+  GoogleAuthProvider,
+  signOut,
+  signInAnonymously,
   onAuthStateChanged 
 } from "firebase/auth";
 import { 
@@ -102,14 +105,13 @@ const getTypeColor = (type) => {
     }
 };
 
-// Weighted Calculation Logic: Now accepts custom weights
+// Weighted Calculation Logic
 const calculateGrade = (studentId, subject, students, assignments, grades, weights) => {
     const student = students.find(s => s.id === studentId);
     if (!student) return { percent: 0, letter: 'N/A' };
     
     const studentGroup = getStudentGroup(student, subject);
 
-    // Filter assignments for this subject AND this student's group (or 'All')
     const relevantAssignments = assignments.filter(a => 
       a.subject === subject && 
       (!a.group || a.group === "All" || a.group === studentGroup)
@@ -146,7 +148,6 @@ const calculateGrade = (studentId, subject, students, assignments, grades, weigh
 
     let weightedPercent = 0;
     
-    // Use configured weights (default to 40/60 if missing)
     const summativeWeight = (weights?.summative || 40) / 100;
     const formativeWeight = (weights?.formative || 60) / 100;
 
@@ -171,7 +172,7 @@ const calculateGrade = (studentId, subject, students, assignments, grades, weigh
     return { percent, letter };
 };
 
-// --- Sub-Components (Views) ---
+// --- View Components ---
 
 const GradebookView = ({ 
   currentSubject, 
@@ -191,7 +192,7 @@ const GradebookView = ({
 
     if (!dataLoaded) return <div className="p-12 text-center text-slate-400">Loading gradebook...</div>;
 
-    const sortedStudents = [...students].sort((a, b) => a.name.localeCompare(b.name));
+    const sortedStudents = [...students].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
     const visibleStudents = viewGroup === "All" 
       ? sortedStudents.filter(s => getStudentGroup(s, currentSubject) !== "No Group")
@@ -285,6 +286,13 @@ const GradebookView = ({
                 </tr>
               </thead>
               <tbody>
+                {visibleStudents.length === 0 && (
+                    <tr>
+                        <td colSpan={visibleAssignments.length + 2} className="px-4 py-8 text-center text-slate-400 italic">
+                            No students enrolled in {currentSubject} (or {viewGroup}). Go to the Students tab to enroll them.
+                        </td>
+                    </tr>
+                )}
                 {visibleStudents.map((student, idx) => {
                   const stats = calculateGrade(student.id, currentSubject, students, assignments, grades, weights);
                   return (
@@ -341,7 +349,7 @@ const StudentsView = ({
     onManageGroups,
     onUpdateStudentGroup
 }) => {
-    const sortedStudents = [...students].sort((a, b) => a.name.localeCompare(b.name));
+    const sortedStudents = [...students].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
     return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -439,7 +447,7 @@ const ReportsView = ({
     reportComments,
     onCommentChange
 }) => {
-    const sortedStudents = [...students].sort((a, b) => a.name.localeCompare(b.name));
+    const sortedStudents = [...students].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
     const [selectedStudentId, setSelectedStudentId] = useState(sortedStudents[0]?.id || '');
     const selectedStudent = students.find(s => s.id === parseInt(selectedStudentId));
 
@@ -658,45 +666,47 @@ export default function App() {
   const [inputPoints, setInputPoints] = useState("");
   const [inputGroup, setInputGroup] = useState("All"); 
   const [inputType, setInputType] = useState("Assignment"); 
-
-  const initialData = {
-    students: [
-      { id: 1, name: "Student 1", groups: {} },
-      { id: 2, name: "Student 2", groups: {} },
-      { id: 3, name: "Student 3", groups: {} },
-      { id: 4, name: "Student 4", groups: {} },
-      { id: 5, name: "Student 5", groups: {} }
-    ],
-    groups: ["Block A"],
-    assignments: [],
-    grades: {},
-    reportComments: {},
-    weights: { summative: 40, formative: 60 }
-  };
+  
+  // --- Refs ---
+  const lastSavedData = useRef("");
+  const saveTimeoutRef = useRef(null);
 
   // --- Auth & Data Loading ---
   useEffect(() => {
-    const initAuth = async () => {
-      try {
-        await signInAnonymously(auth);
-      } catch (e) {
-        console.error("Login Error:", e);
-      }
-    };
-    initAuth();
-
+    // Listen for auth state first
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+      // Only sign in anonymously if NO user is present (and no user was ever present this session)
+      if (!currentUser) {
+        signInAnonymously(auth).catch(e => console.error("Login Error", e));
+      }
     });
     return () => unsubscribe();
   }, []);
 
-  const lastSavedData = useRef("");
+  const handleGoogleLogin = async () => {
+    const provider = new GoogleAuthProvider();
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (error) {
+      console.error("Google Login Error", error);
+      alert("Login Failed: " + error.message);
+    }
+  };
+
+  const handleSignOut = () => {
+    if(window.confirm("Are you sure you want to sign out?")) {
+        signOut(auth);
+        setStudents([]); // Clear local state on logout
+        setDataLoaded(false);
+    }
+  };
 
   // --- Firestore Listener ---
   useEffect(() => {
     if (!user) return;
 
+    // Use the hardcoded appId to ensure valid path
     const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'data', 'gradebook');
     
     const unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
@@ -729,12 +739,13 @@ export default function App() {
           setDataLoaded(true);
         }
       } else {
-        setStudents(initialData.students);
-        setGroups(initialData.groups);
-        setAssignments(initialData.assignments);
-        setGrades(initialData.grades);
-        setReportComments(initialData.reportComments);
-        setWeights(initialData.weights);
+        // Init with Blank Template
+        setStudents([]); // Start with empty roster
+        setGroups(["Block A"]);
+        setAssignments([]);
+        setGrades({});
+        setReportComments({});
+        setWeights({ summative: 40, formative: 60 });
         setDataLoaded(true);
       }
     }, (error) => {
@@ -746,7 +757,6 @@ export default function App() {
   }, [user]);
 
   // --- Auto-Save Logic (Debounced) ---
-  const saveTimeoutRef = useRef(null);
 
   useEffect(() => {
     if (!user || !dataLoaded) return;
@@ -792,7 +802,7 @@ export default function App() {
     }));
   };
 
-  const updateStudentGroup = (studentId, subject, newGroup) => {
+  const onUpdateStudentGroup = (studentId, subject, newGroup) => {
     setStudents(students.map(s => {
         if (s.id === studentId) {
             const newGroups = { ...s.groups, [subject]: newGroup };
@@ -821,14 +831,6 @@ export default function App() {
   };
 
   // --- Modal Logic ---
-
-  const closeModal = () => {
-    setModal({ isOpen: false, type: null, itemId: null, itemData: null });
-    setInputName("");
-    setInputPoints("");
-    setInputGroup("All");
-    setInputType("Assignment");
-  };
 
   const handleModalConfirm = () => {
     switch (modal.type) {
@@ -933,6 +935,14 @@ export default function App() {
     }
     closeModal();
   };
+  
+  const closeModal = () => {
+    setModal({ isOpen: false, type: null, itemId: null, itemData: null });
+    setInputName("");
+    setInputPoints("");
+    setInputGroup("All");
+    setInputType("Assignment");
+  };
 
   const openAddGroup = () => { setInputName(""); setModal({ isOpen: true, type: 'ADD_GROUP' }); };
   const openManageGroups = () => { setModal({ isOpen: true, type: 'MANAGE_GROUPS' }); };
@@ -986,6 +996,37 @@ export default function App() {
     return null;
   };
 
+  // --- LOGIN SCREEN (If not logged in) ---
+  if (!user && !user?.isAnonymous) {
+      return (
+        <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+            <div className="bg-white p-8 rounded-xl shadow-xl max-w-md w-full text-center">
+                <div className="flex justify-center mb-6">
+                    <div className="bg-indigo-100 p-4 rounded-full">
+                        <BookOpen className="w-12 h-12 text-indigo-600" />
+                    </div>
+                </div>
+                <h1 className="text-2xl font-bold text-slate-800 mb-2">Welcome Back!</h1>
+                <p className="text-slate-500 mb-8">Sign in to access your gradebook from any device.</p>
+                
+                <button 
+                    onClick={handleGoogleLogin}
+                    className="w-full flex items-center justify-center gap-3 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold py-3 px-4 rounded-lg transition-all shadow-sm"
+                >
+                    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
+                    Sign in with Google
+                </button>
+                
+                <div className="mt-6 border-t border-slate-100 pt-6">
+                    <button onClick={() => signInAnonymously(auth)} className="text-sm text-slate-400 hover:text-indigo-500">
+                        Continue as Guest (Data stays on this browser)
+                    </button>
+                </div>
+            </div>
+        </div>
+      );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 font-sans text-slate-900 print:bg-white relative">
       <nav className="bg-indigo-700 text-white shadow-lg print:hidden sticky top-0 z-50">
@@ -999,6 +1040,21 @@ export default function App() {
               <div className="hidden md:flex items-center justify-end w-32 mr-4">
                 <SyncIndicator />
               </div>
+              
+              {/* User Profile / Logout */}
+              {user && !user.isAnonymous && (
+                  <div className="flex items-center gap-2 mr-4 border-r border-indigo-600 pr-4">
+                      {user.photoURL ? (
+                          <img src={user.photoURL} alt="Profile" className="w-8 h-8 rounded-full border-2 border-indigo-300" />
+                      ) : (
+                          <div className="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center font-bold">{user.displayName ? user.displayName[0] : 'U'}</div>
+                      )}
+                      <button onClick={handleSignOut} title="Sign Out" className="text-indigo-200 hover:text-white">
+                          <LogOut className="w-4 h-4" />
+                      </button>
+                  </div>
+              )}
+
               <div className="flex gap-4">
                 {[
                   { id: 'gradebook', icon: FileText, label: 'Gradebook' },
@@ -1053,7 +1109,7 @@ export default function App() {
                 onDeleteStudent={openDeleteStudent}
                 onAddGroup={openAddGroup}
                 onManageGroups={openManageGroups}
-                onUpdateStudentGroup={updateStudentGroup}
+                onUpdateStudentGroup={onUpdateStudentGroup}
             />
         }
         {activeTab === 'reports' && 
