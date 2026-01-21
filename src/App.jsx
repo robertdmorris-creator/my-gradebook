@@ -39,7 +39,7 @@ import {
   onSnapshot 
 } from "firebase/firestore";
 
-// --- Firebase Initialization (YOUR KEYS) ---
+// --- Firebase Initialization ---
 const firebaseConfig = {
   apiKey: "AIzaSyCYkFIkz1HoBYJ_1yCXIKBpfUPNEmqLIHo",
   authDomain: "mrbobgradebook.firebaseapp.com",
@@ -54,7 +54,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-// Hardcoded App ID to prevent path errors
 const appId = "mrbobgradebook-v1"; 
 
 // --- Components ---
@@ -106,14 +105,13 @@ const getTypeColor = (type) => {
     }
 };
 
-// Weighted Grading Logic: 60% Formative (Homework/Project/Assign), 40% Summative (Test/Quiz)
+// Weighted Calculation Logic
 const calculateGrade = (studentId, subject, students, assignments, grades, weights) => {
     const student = students.find(s => s.id === studentId);
     if (!student) return { percent: 0, letter: 'N/A' };
     
     const studentGroup = getStudentGroup(student, subject);
 
-    // Filter assignments for this subject AND this student's group
     const relevantAssignments = assignments.filter(a => 
       a.subject === subject && 
       (!a.group || a.group === "All" || a.group === studentGroup)
@@ -149,8 +147,7 @@ const calculateGrade = (studentId, subject, students, assignments, grades, weigh
     if (summativeMax === 0 && formativeMax === 0) return { percent: 0, letter: 'N/A' };
 
     let weightedPercent = 0;
-
-    // Use configured weights (default to 40/60 if missing)
+    
     const summativeWeight = (weights?.summative || 40) / 100;
     const formativeWeight = (weights?.formative || 60) / 100;
 
@@ -644,6 +641,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('gradebook');
   const [currentSubject, setCurrentSubject] = useState('Math');
   const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true); // Initial loading state
   const [syncStatus, setSyncStatus] = useState('idle');
   
   // --- Data State ---
@@ -672,7 +670,7 @@ export default function App() {
     // Listen for auth state
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      // NOTE: Removed automatic sign-in here to prevent loop/flash
+      setLoading(false); // Stop loading once auth state is known
     });
     return () => unsubscribe();
   }, []);
@@ -997,8 +995,19 @@ export default function App() {
     return null;
   };
 
-  // --- LOGIN SCREEN (If not logged in) ---
-  if (!user && !user?.isAnonymous) {
+  // --- RENDER LOGIC ---
+
+  // 1. Loading Spinner (Wait for Firebase Auth)
+  if (loading) {
+      return (
+          <div className="min-h-screen bg-slate-100 flex items-center justify-center">
+              <Loader2 className="w-12 h-12 text-indigo-600 animate-spin" />
+          </div>
+      );
+  }
+
+  // 2. Login Screen (If NOT logged in)
+  if (!user) {
       return (
         <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
             <div className="bg-white p-8 rounded-xl shadow-xl max-w-md w-full text-center">
@@ -1012,15 +1021,15 @@ export default function App() {
                 
                 <button 
                     onClick={handleGoogleLogin}
-                    className="w-full flex items-center justify-center gap-3 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold py-3 px-4 rounded-lg transition-all shadow-sm"
+                    className="w-full flex items-center justify-center gap-3 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold py-3 px-4 rounded-lg transition-all shadow-sm mb-4"
                 >
                     <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
                     Sign in with Google
                 </button>
                 
-                <div className="mt-6 border-t border-slate-100 pt-6">
-                    <button onClick={handleGuestLogin} className="text-sm text-slate-400 hover:text-indigo-500">
-                        Continue as Guest (Data stays on this browser)
+                <div className="border-t border-slate-100 pt-6">
+                    <button onClick={handleGuestLogin} className="text-sm text-slate-400 hover:text-indigo-500 underline">
+                        Continue as Guest (Browser only)
                     </button>
                 </div>
             </div>
@@ -1028,6 +1037,7 @@ export default function App() {
       );
   }
 
+  // 3. Main App (If Logged In)
   return (
     <div className="min-h-screen bg-slate-100 font-sans text-slate-900 print:bg-white relative">
       <nav className="bg-indigo-700 text-white shadow-lg print:hidden sticky top-0 z-50">
@@ -1043,15 +1053,17 @@ export default function App() {
               </div>
               
               {/* User Profile / Logout */}
-              {user && !user.isAnonymous && (
+              {user && (
                   <div className="flex items-center gap-2 mr-4 border-r border-indigo-600 pr-4">
                       {user.photoURL ? (
                           <img src={user.photoURL} alt="Profile" className="w-8 h-8 rounded-full border-2 border-indigo-300" />
                       ) : (
-                          <div className="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center font-bold">{user.displayName ? user.displayName[0] : 'U'}</div>
+                          <div className="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center font-bold text-white text-xs">
+                              {user.isAnonymous ? 'G' : (user.displayName ? user.displayName[0] : 'U')}
+                          </div>
                       )}
-                      <button onClick={handleSignOut} title="Sign Out" className="text-indigo-200 hover:text-white">
-                          <LogOut className="w-4 h-4" />
+                      <button onClick={handleSignOut} title="Sign Out" className="text-indigo-200 hover:text-white transition-colors">
+                          <LogOut className="w-5 h-5" />
                       </button>
                   </div>
               )}
