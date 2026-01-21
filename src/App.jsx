@@ -39,7 +39,7 @@ import {
   onSnapshot 
 } from "firebase/firestore";
 
-// --- Firebase Initialization ---
+// --- Firebase Initialization (YOUR KEYS) ---
 const firebaseConfig = {
   apiKey: "AIzaSyCYkFIkz1HoBYJ_1yCXIKBpfUPNEmqLIHo",
   authDomain: "mrbobgradebook.firebaseapp.com",
@@ -54,6 +54,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+// Hardcoded App ID to prevent path errors
 const appId = "mrbobgradebook-v1"; 
 
 // --- Components ---
@@ -105,13 +106,14 @@ const getTypeColor = (type) => {
     }
 };
 
-// Weighted Calculation Logic
+// Weighted Grading Logic: 60% Formative (Homework/Project/Assign), 40% Summative (Test/Quiz)
 const calculateGrade = (studentId, subject, students, assignments, grades, weights) => {
     const student = students.find(s => s.id === studentId);
     if (!student) return { percent: 0, letter: 'N/A' };
     
     const studentGroup = getStudentGroup(student, subject);
 
+    // Filter assignments for this subject AND this student's group
     const relevantAssignments = assignments.filter(a => 
       a.subject === subject && 
       (!a.group || a.group === "All" || a.group === studentGroup)
@@ -147,7 +149,8 @@ const calculateGrade = (studentId, subject, students, assignments, grades, weigh
     if (summativeMax === 0 && formativeMax === 0) return { percent: 0, letter: 'N/A' };
 
     let weightedPercent = 0;
-    
+
+    // Use configured weights (default to 40/60 if missing)
     const summativeWeight = (weights?.summative || 40) / 100;
     const formativeWeight = (weights?.formative || 60) / 100;
 
@@ -666,10 +669,10 @@ export default function App() {
 
   // --- Auth & Data Loading ---
   useEffect(() => {
-    // Listen for auth state first
+    // Listen for auth state
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      // Removed automatic anonymous sign-in to prevent flashing
+      // NOTE: Removed automatic sign-in here to prevent loop/flash
     });
     return () => unsubscribe();
   }, []);
@@ -682,6 +685,14 @@ export default function App() {
       console.error("Google Login Error", error);
       alert("Login Failed: " + error.message);
     }
+  };
+  
+  // Explicitly continue as guest only when user clicks button
+  const handleGuestLogin = () => {
+      signInAnonymously(auth).catch(e => {
+          console.error("Guest Login Error", e);
+          alert("Could not sign in as guest.");
+      });
   };
 
   const handleSignOut = () => {
@@ -1008,7 +1019,7 @@ export default function App() {
                 </button>
                 
                 <div className="mt-6 border-t border-slate-100 pt-6">
-                    <button onClick={() => signInAnonymously(auth)} className="text-sm text-slate-400 hover:text-indigo-500">
+                    <button onClick={handleGuestLogin} className="text-sm text-slate-400 hover:text-indigo-500">
                         Continue as Guest (Data stays on this browser)
                     </button>
                 </div>
