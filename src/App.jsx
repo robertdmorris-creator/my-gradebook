@@ -286,13 +286,6 @@ const GradebookView = ({
                 </tr>
               </thead>
               <tbody>
-                {visibleStudents.length === 0 && (
-                    <tr>
-                        <td colSpan={visibleAssignments.length + 2} className="px-4 py-8 text-center text-slate-400 italic">
-                            No students enrolled in {currentSubject} (or {viewGroup}). Go to the Students tab to enroll them.
-                        </td>
-                    </tr>
-                )}
                 {visibleStudents.map((student, idx) => {
                   const stats = calculateGrade(student.id, currentSubject, students, assignments, grades, weights);
                   return (
